@@ -4,9 +4,9 @@
 
 1. Clone the 'automation' repository, main branch. All the yaml and scripts you will be using can be found in the releasePipeline folder.
 2. Ensure the ArgoCD CLI is installed. The argocd cli can be downloaded [here]( https://argo-cd.readthedocs.io/en/stable/cli_installation/).
-3. Log into ArgoCD `argocd login --sso argocd.galasa.dev`
+3. Log into ArgoCD `argocd login --sso argocd.galasa.dev --grpc-web`
 4. Ensure GitHub CLI is istalled. It can be installed using the guide [here](https://github.com/cli/cli?tab=readme-ov-file#installation)
-5. Authenticate github cli using `gh auth login`
+5. Authenticate github cli using `gh auth login --web`
 6. You will need to log into both the internal cicsk8s and external ibmcloud Kubernetes clusters.
 7. Ensure you have the latest galasabld program. It can be downloaded [here](https://development.galasa.dev/main/binary/bld/). Add it on the path.
 8. jq needs to be installed. It can be downloaded [here](https://jqlang.github.io/jq/download/).
@@ -45,19 +45,42 @@ For each of the Kubernetes Tekton command, you can follow with tkn -n galasa-bui
     - This will search and check that one artifact from each Galasa module (platform, wrapping, gradle, maven, framework, extensions, managers and obr) contains a file called *.jar.asc which shows the artifacts have been signed. If the .asc files aren't present, debug and diagnose why the artifacts have not been signed.
 
 ### Run the regression tests
-1. Run [25-run-simbank-ivts.sh](./25-run-simbank-ivts.sh). You will have to monitor the workflow run in GitHub Actions and ensure it finishes successfully.
-2. Run [26-run-ecosystem1-ivts.sh](./26-run-ecosystem1-ivts.sh). You will have to monitor the workflow run in GitHub Actions and ensure it finishes successfully.
-3. Run [27-run-prod1-ivts.sh](./27-run-prod1-ivts.sh). You will have to monitor the pipeline run on Tekton and ensure it finishes successfully.
-4. Run [28-run-prod1-integration-tests.sh](./28-run-prod1-integration-tests.sh). All the tests must pass before moving on. For the ones which fail, run them individually:
+
+#### Tests that run from GitHub Actions
+
+Each of these scripts starts a GitHub Actions workflow. These test suites run tests from the GitHub Actions runner either locally in the runner, or they submit tests to run remotely on ecosystem1.
+
+The script will give you the URL of the workflow run. You will have to monitor the workflow run in GitHub Actions and ensure it finishes successfully and all tests pass.
+
+**These three steps can be done at the same time.**
+
+1. Run [23-run-isolated-tests.sh](./23-run-isolated-tests.sh). This tests that the Simbank, Core and Artifact Managers work offline using just the Isolated/MVP zips.
+2. Run [24-run-simbank-ivts.sh](./24-run-simbank-ivts.sh). This tests that the Simbank Managers work online.
+3. Run [25-run-ecosystem1-ivts.sh](./25-run-ecosystem1-ivts.sh). This tests the Core, Artifact and HTTP Managers work online.
+
+#### Tests that run from Tekton
+
+Each of these scripts starts a Tekton pipeline on our internal cluster. This is because these tests require mainframe resource which we don't currently have available externally. These test suites run tests either locally on the Tekton runner, or submit tests to run from Tekton to prod1.
+
+The script will give you the pipeline run name. You will have to monitor the pipeline run in Tekton and ensure it finishes successfully and all tests pass.
+
+**These three steps should be done one after the other.**
+
+1. Run [26-run-cicsts-isolated-tests.sh](./26-run-cicsts-isolated-tests.sh). This tests that the CICS, CEMT, CEDA and SDV Managers work offline using just the Isolated zip.
+2. Run [27-run-prod1-ivts.sh](./27-run-prod1-ivts.sh). This tests that the CICS, CEMT, CEDA, SDV and z/OS Managers work online.
+3. Run [28-run-prod1-integration-tests.sh](./28-run-prod1-integration-tests.sh). **These are the remaining inttests that have not yet been converted to an IVT.** All the tests must pass before moving on. For the ones which fail, run them individually:
 
    a. As currently some tests pass if run a second time due to the vaguaries of system resource availability. Also make sure @hobbit1983's VM image isn't down.
 
-   b. If there are any failures from the regression testing, amend [29-regression-reruns.yaml](./29-regression-reruns.yaml) to supply the correct version and argocd-synced/pipelines/regression-reruns.yaml. Add the tests that failed as shown in the example, to run them again.
+   b. If there are any failures from the regression testing, amend [29-regression-reruns.yaml](./29-regression-reruns.yaml) to supply the correct version and [regression-reruns.yaml](./argocd-synced/pipelines/regression-reruns.yaml). Add the tests that failed as shown in the example, to run them again.
 
    c. Run `kubectl apply -f argocd-synced/pipelines/regression-reruns.yaml` and `kubectl -n galasa-build create -f 29-regression-reruns.yaml` - Retest the failing tests.
 
    d. Repeat as required.
-5. **Note:** A [story](https://github.com/galasa-dev/projectmanagement/issues/2108) exists to automate this manual process for future releases. Test the [MVP zip](https://development.galasa.dev/release/maven-repo/mvp/dev/galasa/galasa-isolated-mvp) by working through the instructions on the Galasa website to do with using Galasa offline (although you will need to slightly adapt in some places as you are testing the MVP from the prerelease maven repo - these differences are documented below):
+
+### Test the MVP zip contents against the galasa.dev documentation
+
+1. **Note:** A [story](https://github.com/galasa-dev/projectmanagement/issues/2108) exists to automate this manual process for future releases. Test the [MVP zip](https://development.galasa.dev/release/maven-repo/mvp/dev/galasa/galasa-isolated-mvp) by working through the instructions on the Galasa website to do with using Galasa offline (although you will need to slightly adapt in some places as you are testing the MVP from the prerelease maven repo - these differences are documented below):
     - https://galasa.dev/docs/cli-command-reference/installing-offline
         - 1: The output of `docker load -i isolated.tar` should instead be `Loaded image: ghcr.io/galasa-dev/galasa-mvp:main`.
         - 2: Run the container by running `docker run -d -p 8080:80 --name galasa ghcr.io/galasa-dev/galasa-mvp:main` instead.
@@ -105,49 +128,36 @@ Once an approver has approved, you can move on.
 
 ### Create version tag from release branch
 
+<!-- Will improve on this part -->
+1. Ensure the 'release' branch on the automation repository is up to date with 'main' - it will be one commit behind as it won't have the updates to the galasa-production sites' image versions.
+1. Ensure the 'release' branch on the galasa-docs-preview repository is up to date with 'main', in case any Main builds in Galasa ran and re-updated 'main'.
+1. Publish the Galasa docs preview to the production site. Start the [Publish site to production workflow](https://github.com/galasa-dev/galasa-docs-preview/actions/workflows/publish.yaml) by clicking "Run workflow".
+1. Ensure the 'release' branch on the galasa-docs repository is up to date with 'main'.
 1. Run the [41-tag-github-repositories.sh](./41-tag-github-repositories.sh) - It figures out the galasa version, then creates a version tag from all the release branches in all the repositories. So we can later delete the release branches and the tags will still be there.
-The pipeline it kicks off is called `tag-galasa-*`. Takes about a minute to complete. Check if finished OK on the tekton dashboard.
 
 ### Upload built artefacts as new Releases on GitHub
 
-1. [42-deploy-cli-release.md](./42-deploy-cli-release.md) - Follow instructions to upload the CLI binaries to the repository under a new release.
+1. [42-upload-cli-release.md](./42-upload-cli-release.md) - Follow instructions to upload the CLI binaries to the repository under a new release.
 1. [43-upload-isolated-release.md](./43-upload-isolated-release.md) - Follow instructions to upload the Isolated and MVP zips to the repository under a new release.
+
+### Update Homebrew installed for the CLI
+
+1. [44-update-homebrew.md](./44-update-homebrew.md) - Follow the manual steps in this file to make the new version of the CLI available for the homebrew installer.
 
 ### Bump to new version for development
 
 1. [95-move-to-new-version.md](./95-move-to-new-version.md) - Follow the manual steps in this file to upgrade the development version of Galasa to the next one up.
-2. [97-update-homebrew.md](./97-update-homebrew.md) - Follow the manual steps in this file to make the new version of the CLI available for the homebrew installer.
-3. In the file `../infrastructure/cicsk8s/galasa-dev/cps-properties.yaml` update the CPS properties to contain the new development version number:
-   
-   a. galasaecosystem.runtime.version
-   
-   b. galasaecosystem.isolated.full.zip
+2. Run the [set-version.sh](./set-version.sh) script which updates all CPS properties in the [`../infrastructure/cicsk8s/galasa-dev/cps-properties.yaml`](../infrastructure/cicsk8s/galasa-dev/cps-properties.yaml) file that contain the version that was just released to the new development version. Deliver the changes to the automation repository and the CPS properties will be applied automatically.
 
-   c. galasaecosystem.isolated.mvp.zip
+3. If the above fails and you need to update the CPS properties manually for some reason, run the [99-update-development-version.sh](./99-update-development-version.sh) script.
 
-   d. galasaecosystem.galasaboot.version
-
-   e. galasaecosystem.simbanktests.version
-
-   f. galasaecosystem.simplatform.version
-
-   g. framework.test.stream.inttests.location
-
-   h. framework.test.stream.inttests.obr
-
-   i. framework.test.stream.simbank.obr
-
-   Deliver the changes to the automation repository and the CPS properties will be applied automatically.
-
-4. If the above fails and you need to update the CPS properties manually for some reason, run the [99-update-development-version.sh](./99-update-development-version.sh) script.
-
-5. Update the CPS properties for the internal integrated tests using galasactl:
+4. Update the CPS properties for the internal integrated tests using galasactl:
 
    a. framework.test.stream.internal-inttests.location
 
    b. framework.test.stream.internal-inttests.obr
 
-6. Upgrade the version of the CLI we use for our regression testing to this released version. Retag the 'release' image of galasactl-ibm-x86_64 to 'stable' (regression testing uses galasactl-ibm-x86_64:stable):
+5. Upgrade the version of the CLI we use for our regression testing to this released version. Retag the 'release' image of galasactl-ibm-x86_64 to 'stable' (regression testing uses galasactl-ibm-x86_64:stable):
 
 ``` shell
 docker pull ghcr.io/galasa-dev/galasactl-ibm-x86_64:release
@@ -157,7 +167,7 @@ docker image push ghcr.io/galasa-dev/galasactl-ibm-x86_64:stable
 
 ### Clean up
 
-1. Run [03-repo-branches-delete.sh](./03-repo-branches-delete.sh) - Say you are doing a 'release' when it asks. That Deletes the 'release' branch in the GitHub repositories.
+1. Run [03-repo-branches-delete.sh](./03-repo-branches-delete.sh) - Say you are doing a 'release' when it asks. That deletes the 'release' branch in the GitHub repositories.
 2. (**Manual until we automate it with GitHub Actions**) Delete the images in GHCR tagged 'release':
    - obr-maven-artefacts
    - obr-generic

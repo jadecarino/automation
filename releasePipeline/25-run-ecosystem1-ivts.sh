@@ -7,7 +7,7 @@
 #
 #-----------------------------------------------------------------------------------------                   
 #
-# Objectives: Build the webui repository on release/prerelease branches.
+# Objectives: Run Core IVTs in ecosystem1.
 #
 # Environment variable over-rides:
 # 
@@ -53,18 +53,11 @@ warn() { printf "${tan}➜ %s${reset}\n" "$@" ;}
 bold() { printf "${bold}%s${reset}\n" "$@" ;}
 note() { printf "\n${underline}${bold}${blue}Note:${reset} ${blue}%s${reset}\n" "$@" ;}
 
+#-----------------------------------------------------------------------------------------                   
+# Main logic.
+#-----------------------------------------------------------------------------------------   
 
-#-----------------------------------------------------------------------------------------                   
-# Functions
-#-----------------------------------------------------------------------------------------                   
-function usage {
-    info "Syntax: 11-build-webui.sh [OPTIONS]"
-    cat << EOF
-Options are:
---prerelease : Builds the Galasa web UI for a pre-release.
---release : Builds the Galasa web UI for a release.
-EOF
-}
+mkdir -p temp
 
 function ask_user_for_release_type {
     PS3="Select the type of release process please: "
@@ -86,59 +79,31 @@ function ask_user_for_release_type {
     echo "Chosen type of release process: ${release_type}"
 }
 
-function build_webui {
+function run_core_ivts {
 
-    info "About to start the Main build for the 'webui' repo"
+    info "Running 'Galasa Core Regression Tests (non z/OS)' in GitHub Actions"
 
-    workflow_dispatch=$( gh workflow run build.yaml --repo galasa-dev/webui --ref ${release_type} )
+    workflow_dispatch=$( gh workflow run regression-tests-core-non-zos.yaml --repo galasa-dev/automation --ref ${release_type} )
 
     if [[ $? != 0 ]]; then
         error "Failed to call the workflow. $?"
         exit 1
     fi
 
-    # Sleep to give the workflow a chance to start
     sleep 5
 
-    run_id=$(gh run list --repo galasa-dev/webui --workflow build.yaml --limit 1 --json  databaseId --jq '.[0].databaseId')
+    run_id=$(gh run list --repo galasa-dev/automation --workflow regression-tests-core-non-zos.yaml --limit 1 --json  databaseId --jq '.[0].databaseId')
 
     if [[ $? != 0 ]]; then
         error "Failed to get the workflow run_id. $?"
         exit 1
     fi
 
-    success "Web UI Main build started with Run ID: ${run_id}"
+    success "'Galasa Core Regression Tests (non z/OS)' workflow started with Run ID: ${run_id}"
     
-    bold "Now watch the workflow run to make sure it finishes successfully at https://github.com/galasa-dev/webui/actions/runs/${run_id}"
+    bold "Now watch the workflow run to make sure it finishes successfully at https://github.com/galasa-dev/automation/actions/runs/${run_id}"
 
 }
 
-#-----------------------------------------------------------------------------------------
-# Process parameters
-#-----------------------------------------------------------------------------------------
-release_type=""
-while [ "$1" != "" ]; do
-    case $1 in
-        --prerelease )          release_type="prerelease"
-                                ;;
-        --release )             release_type="release"
-                                ;;
-        -h | --help )           usage
-                                exit
-                                ;;
-        * )                     error "Unexpected argument $1"
-                                usage
-                                exit 1
-    esac
-    shift
-done
-
-# ------------------------------------------------------------------------
-# Main program logic
-# ------------------------------------------------------------------------
-mkdir -p temp
-if [[ -z "${release_type}" ]]; then
-    ask_user_for_release_type
-fi
-
-build_webui
+ask_user_for_release_type
+run_core_ivts

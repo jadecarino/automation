@@ -12,10 +12,9 @@ metadata:
     kubernetes.io/ingress.class: "public-iks-k8s-nginx"
     nginx.ingress.kubernetes.io/ssl-redirect: 'true'
 spec:
-  tls:
-  - hosts:
-    - triggers.galasa.dev
-    secretName: galasa-wildcard-cert
+  # No tls section required for this Ingress it is only used for 
+  # internal cluster traffic over HTTP therefore it does not need 
+  # TLS configuration to a certificate.
   rules:
   - host: triggers.galasa.dev
     http:
@@ -46,14 +45,4 @@ spec:
             port:
               number: 8080
         path: /galasa-monorepo-workflow
-        pathType: Prefix
-  - host: triggers.galasa.dev
-    http:
-      paths:
-      - backend:
-          service:
-            name: el-github-cli-workflow-completed-listener
-            port:
-              number: 8080
-        path: /cli-workflow
         pathType: Prefix

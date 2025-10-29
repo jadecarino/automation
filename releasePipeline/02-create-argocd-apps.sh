@@ -12,7 +12,14 @@
 # Environment variable over-rides:
 # 
 #-----------------------------------------------------------------------------------------                   
-
+function usage {
+    info "Syntax: 02-create-argocd-apps.sh [OPTIONS]"
+    cat << EOF
+Options are:
+--prerelease : Creates the ArgoCD apps for a Galasa pre-release.
+--release : Creates the ArgoCD apps for a Galasa release.
+EOF
+}
 
 function ask_user_for_release_type {
     PS3="Select the type of release process please: "
@@ -61,7 +68,8 @@ function create_maven_repos {
                     --helm-set isolated.deploy=true \
                     --helm-set mvp.branch=${release_type} \
                     --helm-set mvp.imageTag=${release_type} \
-                    --helm-set mvp.deploy=true 
+                    --helm-set mvp.deploy=true \
+                    --grpc-web
 }
 
 function create_bld {   
@@ -76,7 +84,8 @@ function create_bld {
                     --dest-server https://kubernetes.default.svc \
                     --dest-namespace galasa-development \
                     --helm-set branch=${release_type} \
-                    --helm-set imageTag=${release_type}
+                    --helm-set imageTag=${release_type} \
+                    --grpc-web
 }
 
 function create_cli {   
@@ -91,7 +100,8 @@ function create_cli {
                     --dest-server https://kubernetes.default.svc \
                     --dest-namespace galasa-development \
                     --helm-set branch=${release_type} \
-                    --helm-set imageTag=${release_type}
+                    --helm-set imageTag=${release_type} \
+                    --grpc-web
 }
 
 function create_simplatform {   
@@ -106,15 +116,38 @@ function create_simplatform {
                     --dest-server https://kubernetes.default.svc \
                     --dest-namespace galasa-development \
                     --helm-set branch=${release_type} \
-                    --helm-set imageTag=${release_type}
+                    --helm-set imageTag=${release_type} \
+                    --grpc-web
 }
 
-# checks if it's been called by 01-run-pre-release.sh, if it isn't run all functions
-if [[ "$CALLED_BY_PRERELEASE" == "" ]]; then
+#-----------------------------------------------------------------------------------------
+# Process parameters
+#-----------------------------------------------------------------------------------------
+release_type=""
+while [ "$1" != "" ]; do
+    case $1 in
+        --prerelease )          release_type="prerelease"
+                                ;;
+        --release )             release_type="release"
+                                ;;
+        -h | --help )           usage
+                                exit
+                                ;;
+        * )                     error "Unexpected argument $1"
+                                usage
+                                exit 1
+    esac
+    shift
+done
+
+# ------------------------------------------------------------------------
+# Main logic
+# ------------------------------------------------------------------------
+if [[ -z "${release_type}" ]]; then
     ask_user_for_release_type
-    set -e
-    create_maven_repos
-    create_bld
-    create_cli
-    create_simplatform
 fi
+
+create_maven_repos
+create_bld
+create_cli
+create_simplatform
